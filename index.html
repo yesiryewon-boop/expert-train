@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>청소당번 뽑기</title>
+<style>
+  :root {
+    --bg: #f4f7fb;
+    --card: #ffffff;
+    --text: #1f2937;
+    --muted: #6b7280;
+    --primary: #3b82f6;
+    --primary-dark: #2563eb;
+    --accent: #f59e0b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg);
+    font-family: "Pretendard", "Noto Sans KR", "Malgun Gothic", sans-serif;
+    color: var(--text);
+    padding: 16px;
+  }
+  .container {
+    width: 100%;
+    max-width: 640px;
+    background: var(--card);
+    border-radius: 20px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+    padding: 32px 24px;
+    text-align: center;
+  }
+  h1 { margin: 0 0 6px; font-size: 1.8rem; }
+  .sub { margin: 0 0 24px; color: var(--muted); font-size: 0.95rem; }
+  .settings {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-bottom: 24px;
+  }
+  .settings label { font-size: 0.9rem; color: var(--muted); }
+  .settings input {
+    width: 70px;
+    margin-left: 6px;
+    padding: 6px 8px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    font-size: 1rem;
+    text-align: center;
+  }
+  .result {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 14px;
+    min-height: 110px;
+    align-items: center;
+    margin-bottom: 24px;
+  }
+  .ball {
+    width: 84px;
+    height: 84px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+    color: #fff;
+    font-size: 2rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 6px 14px rgba(59, 130, 246, 0.35);
+  }
+  .ball.rolling { background: linear-gradient(135deg, #9ca3af, #6b7280); box-shadow: none; }
+  .ball.pop { animation: pop 0.45s ease; }
+  @keyframes pop {
+    0% { transform: scale(0.3); opacity: 0; }
+    70% { transform: scale(1.15); }
+    100% { transform: scale(1); opacity: 1; }
+  }
+  .placeholder { color: var(--muted); }
+  button {
+    background: var(--primary);
+    color: #fff;
+    border: none;
+    border-radius: 12px;
+    padding: 14px 32px;
+    font-size: 1.1rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.2s, transform 0.1s;
+  }
+  button:hover { background: var(--primary-dark); }
+  button:active { transform: scale(0.97); }
+  button:disabled { background: #9ca3af; cursor: not-allowed; }
+  .history { margin-top: 28px; text-align: left; }
+  .history h2 { font-size: 1rem; color: var(--muted); margin: 0 0 8px; }
+  .history ul { list-style: none; margin: 0; padding: 0; }
+  .history li {
+    padding: 8px 12px;
+    border-bottom: 1px solid #eef0f3;
+    font-size: 0.95rem;
+  }
+  .history li span.time { color: var(--muted); margin-right: 8px; font-size: 0.85rem; }
+  .error { color: #dc2626; font-size: 0.9rem; min-height: 1.2em; margin-bottom: 12px; }
+</style>
+</head>
+<body>
+  <div class="container">
+    <h1>🧹 3학년 2반 청소당번 당장 뽑기</h1>
+    <p class="sub">번호 범위에서 중복 없이 무작위로 뽑습니다.</p>
+
+    <div class="settings">
+      <label>전체 인원 <input type="number" id="total" value="30" min="1" max="100"></label>
+      <label>뽑을 인원 <input type="number" id="count" value="5" min="1" max="100"></label>
+    </div>
+    <div class="error" id="error"></div>
+
+    <div class="result" id="result">
+      <span class="placeholder">버튼을 눌러 당번을 뽑아 보세요!</span>
+    </div>
+
+    <button id="drawBtn">당번 뽑기</button>
+
+    <div class="history" id="historyBox" hidden>
+      <h2>이전 뽑기 기록</h2>
+      <ul id="history"></ul>
+    </div>
+  </div>
+
+<script>
+  const totalInput = document.getElementById('total');
+  const countInput = document.getElementById('count');
+  const resultEl = document.getElementById('result');
+  const errorEl = document.getElementById('error');
+  const drawBtn = document.getElementById('drawBtn');
+  const historyBox = document.getElementById('historyBox');
+  const historyEl = document.getElementById('history');
+
+  // 암호학적 난수를 이용한 0 이상 max 미만 정수 (편향 방지)
+  function randomInt(max) {
+    const limit = Math.floor(0x100000000 / max) * max;
+    const buf = new Uint32Array(1);
+    do { crypto.getRandomValues(buf); } while (buf[0] >= limit);
+    return buf[0] % max;
+  }
+
+  // Fisher-Yates 셔플 후 앞에서 count개 선택
+  function pick(total, count) {
+    const arr = Array.from({ length: total }, (_, i) => i + 1);
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = randomInt(i + 1);
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr.slice(0, count).sort((a, b) => a - b);
+  }
+
+  function draw() {
+    const total = parseInt(totalInput.value, 10);
+    const count = parseInt(countInput.value, 10);
+    errorEl.textContent = '';
+
+    if (!Number.isInteger(total) || !Number.isInteger(count) || total < 1 || count < 1) {
+      errorEl.textContent = '1 이상의 정수를 입력해 주세요.';
+      return;
+    }
+    if (count > total) {
+      errorEl.textContent = '뽑을 인원은 전체 인원보다 클 수 없습니다.';
+      return;
+    }
+
+    drawBtn.disabled = true;
+    const winners = pick(total, count);
+
+    // 슬롯머신처럼 숫자가 돌아가는 연출
+    resultEl.innerHTML = '';
+    const balls = winners.map(() => {
+      const b = document.createElement('div');
+      b.className = 'ball rolling';
+      b.textContent = '?';
+      resultEl.appendChild(b);
+      return b;
+    });
+
+    const spin = setInterval(() => {
+      balls.forEach(b => { if (b.classList.contains('rolling')) b.textContent = randomInt(total) + 1; });
+    }, 60);
+
+    // 한 명씩 차례로 확정
+    balls.forEach((b, i) => {
+      setTimeout(() => {
+        b.classList.remove('rolling');
+        b.textContent = winners[i];
+        b.classList.add('pop');
+        if (i === balls.length - 1) {
+          clearInterval(spin);
+          drawBtn.disabled = false;
+          drawBtn.textContent = '다시 뽑기';
+          addHistory(winners);
+        }
+      }, 700 + i * 500);
+    });
+  }
+
+  function addHistory(winners) {
+    const now = new Date();
+    const time = now.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const li = document.createElement('li');
+    li.innerHTML = '<span class="time">' + time + '</span>' + winners.join('번, ') + '번';
+    historyEl.prepend(li);
+    historyBox.hidden = false;
+  }
+
+  drawBtn.addEventListener('click', draw);
+</script>
+</body>
+</html>
